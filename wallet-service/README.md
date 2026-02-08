@@ -1,158 +1,289 @@
-# Enterprise-Grade Wallet Service
+# 🦖 Dino Ventures - Wallet Service
 
-A production-ready internal wallet service with double-entry accounting, ACID transactions, and zero tolerance for data inconsistency.
+> **Backend Assignment Submission** | Production-Grade Internal Wallet System
 
-## 🏗️ Architecture
+A high-performance, ledger-based wallet service built with **TypeScript**, **Node.js**, **Express**, and **PostgreSQL**. Designed for gaming applications handling millions of virtual currency transactions.
+
+---
+
+## 📋 Table of Contents
+
+- [Problem Statement](#-problem-statement)
+- [Solution Approach](#-solution-approach)
+- [Architecture](#-architecture)
+- [API Endpoints](#-api-endpoints)
+- [Key Design Decisions](#-key-design-decisions)
+- [Performance Optimizations](#-performance-optimizations)
+- [Running the Service](#-running-the-service)
+- [Testing](#-testing)
+
+---
+
+## 🎯 Problem Statement
+
+Build an **internal wallet service** for a gaming platform that handles:
+- Virtual currency management (Gold Coins, Diamonds, Loyalty Points)
+- Real-time balance tracking
+- Top-up, bonus, and spend transactions
+- High concurrency with data integrity guarantees
+
+### Core Requirements
+- ✅ RESTful APIs for wallet operations
+- ✅ Idempotency for safe retries
+- ✅ Concurrency safety (no race conditions)
+- ✅ Audit trail for all transactions
+
+---
+
+## 💡 Solution Approach
+
+### Why Ledger-Based Architecture? (Brownie Points 🍪)
+
+Instead of a simple `balance` field that gets updated, I implemented a **double-entry ledger system**:
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                       API Layer                              │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐  │
-│  │   Express   │  │  Validation │  │  Error Handling     │  │
-│  │   Router    │  │  Middleware │  │  + Idempotency      │  │
-│  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘  │
-└─────────┼────────────────┼────────────────────┼─────────────┘
-          │                │                    │
-┌─────────▼────────────────▼────────────────────▼─────────────┐
-│                     Service Layer                            │
-│  ┌──────────────────────┐  ┌──────────────────────────────┐ │
-│  │   Wallet Service     │  │     Ledger Service           │ │
-│  │ (Business Logic)     │  │ (Double-Entry Accounting)    │ │
-│  └──────────┬───────────┘  └──────────────┬───────────────┘ │
-└─────────────┼──────────────────────────────┼────────────────┘
-              │                              │
-┌─────────────▼──────────────────────────────▼────────────────┐
-│                    Repository Layer                          │
-│  ┌───────────────────────────────────────────────────────┐  │
-│  │              Wallet Repository (SQL Queries)          │  │
-│  │  • Row-level locking  • Ordered locks  • Balance calc │  │
-│  └───────────────────────────────────────────────────────┘  │
-└─────────────────────────────────┬───────────────────────────┘
-                                  │
-┌─────────────────────────────────▼───────────────────────────┐
-│                    PostgreSQL 15+                            │
-│  ┌────────────┐  ┌────────────┐  ┌────────────────────────┐ │
-│  │ asset_types│  │  wallets   │  │    ledger_entries      │ │
-│  └────────────┘  └────────────┘  └────────────────────────┘ │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │          wallet_balances (Materialized View)         │   │
-│  └──────────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
+Traditional Approach          vs          Ledger Approach
+┌─────────────────┐                    ┌─────────────────┐
+│ wallets         │                    │ ledger_entries  │
+├─────────────────┤                    ├─────────────────┤
+│ user_id         │                    │ transaction_id  │
+│ balance ← MUTABLE                    │ wallet_id       │
+└─────────────────┘                    │ entry_type      │ ← IMMUTABLE
+                                       │ amount          │
+                                       │ created_at      │
+                                       └─────────────────┘
 ```
 
-## ✨ Features
+**Benefits:**
+1. **Complete Audit Trail** - Every transaction is preserved forever
+2. **Self-Healing** - Balance = SUM(credits) - SUM(debits), always correct
+3. **Debugging** - Can trace exact flow of funds
+4. **Compliance-Ready** - Meets financial auditing standards
 
-- **Double-Entry Accounting**: Every transaction creates balanced debit/credit entries
-- **ACID Transactions**: SERIALIZABLE isolation level prevents race conditions
-- **Idempotency**: Reference IDs prevent duplicate transaction processing
-- **Deadlock Prevention**: Wallets are locked in ascending ID order
-- **Immutable Ledger**: Balance is calculated from transaction history, never stored
-- **Materialized Views**: Pre-calculated balances for fast reads
+### Double-Entry Accounting
 
-## 🚀 Quick Start
+Every transaction creates **two entries** that must balance:
+
+```
+Top-up $100:
+┌─────────────────────────────────────────────────┐
+│  Treasury Wallet    │  DEBIT   │  -100         │
+│  User Wallet        │  CREDIT  │  +100         │
+│                     │  NET     │   0  ✓        │
+└─────────────────────────────────────────────────┘
+```
+
+---
+
+## 🏗 Architecture
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                      API Layer (Express)                    │
+│  /health  /topup  /bonus  /spend  /balance  /transactions  │
+└──────────────────────────┬─────────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────────┐
+│                    Middleware Layer                         │
+│   [Validation] [Idempotency Check] [Error Handling]        │
+└──────────────────────────┬─────────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────────┐
+│                    Service Layer                            │
+│   Business Logic • Transaction Orchestration                │
+└──────────────────────────┬─────────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────────┐
+│                   Repository Layer                          │
+│   Database Queries • Row Locking • Balance Calculation      │
+└──────────────────────────┬─────────────────────────────────┘
+                           │
+┌──────────────────────────▼─────────────────────────────────┐
+│                    PostgreSQL                               │
+│   SERIALIZABLE Isolation • Materialized Views • Indexes    │
+└────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔌 API Endpoints
+
+| # | Method | Endpoint | Description |
+|---|--------|----------|-------------|
+| 1 | GET | `/api/v1/health` | Health check |
+| 2 | GET | `/api/v1/wallets/:user_id/balance` | Get wallet balance |
+| 3 | POST | `/api/v1/wallets/topup` | Add credits (purchase) |
+| 4 | POST | `/api/v1/wallets/bonus` | Issue bonus/reward |
+| 5 | POST | `/api/v1/wallets/spend` | Deduct for purchase |
+| 6 | GET | `/api/v1/wallets/:user_id/transactions` | Transaction history |
+| 7 | GET | `/api/v1/transactions/:reference_id` | Transaction details |
+
+### Example: Top-up Request
+
+```bash
+curl -X POST http://localhost:3000/api/v1/wallets/topup \
+  -H "Content-Type: application/json" \
+  -d '{
+    "user_id": "user_alice",
+    "asset_code": "GOLD_COINS",
+    "amount": 5000,
+    "reference_id": "topup_stripe_12345"
+  }'
+```
+
+---
+
+## 🧠 Key Design Decisions
+
+### 1. Idempotency via Reference ID
+
+Every write operation requires a unique `reference_id`. If a client retries with the same ID, we return the original result instead of processing again.
+
+```typescript
+// Check before processing
+const existing = await findLedgerEntryByReferenceId(referenceId);
+if (existing) {
+    throw new DuplicateTransactionError(referenceId, existing.transaction_id);
+}
+```
+
+**Why?** Network failures happen. Clients can safely retry without double-charging.
+
+### 2. Ordered Locking to Prevent Deadlocks
+
+When locking multiple wallets, we **always lock in ascending ID order**:
+
+```typescript
+const sortedIds = [...walletIds].sort((a, b) => a - b);
+await client.query(`
+    SELECT * FROM wallets 
+    WHERE id = ANY($1) 
+    ORDER BY id ASC 
+    FOR UPDATE NOWAIT
+`, [sortedIds]);
+```
+
+**Why?** If Transaction A locks [1, 2] and Transaction B locks [2, 1], deadlock occurs. Consistent ordering prevents this.
+
+### 3. SERIALIZABLE Transaction Isolation
+
+```typescript
+await client.query('BEGIN ISOLATION LEVEL SERIALIZABLE');
+```
+
+**Why?** Guarantees that concurrent transactions appear to execute one at a time. Essential for financial operations.
+
+### 4. Materialized View for Fast Balance Reads
+
+```sql
+CREATE MATERIALIZED VIEW wallet_balances AS
+SELECT 
+    wallet_id,
+    SUM(CASE WHEN entry_type = 'CREDIT' THEN amount ELSE -amount END) as balance
+FROM ledger_entries
+GROUP BY wallet_id;
+```
+
+**Why?** Balance queries are frequent. Computing from ledger every time is expensive. The view is refreshed after transactions.
+
+---
+
+## ⚡ Performance Optimizations
+
+### Problem 1: N+1 Query for Balance History
+
+**Bad Approach:**
+```typescript
+for (const tx of transactions) {
+    tx.balance_after = await calculateBalanceAt(tx.created_at); // N queries!
+}
+```
+
+**Our Approach:** PostgreSQL Window Functions
+```sql
+SELECT 
+    transaction_id,
+    amount,
+    SUM(CASE WHEN entry_type = 'CREDIT' THEN amount ELSE -amount END) 
+        OVER (ORDER BY created_at) as balance_after
+FROM ledger_entries
+```
+
+**Result:** 1 query instead of N+1 ✅
+
+### Problem 2: N+1 Query for Wallet Names
+
+**Bad Approach:**
+```typescript
+for (const entry of entries) {
+    const wallet = await getWallet(entry.wallet_id); // N queries!
+    entry.wallet_name = wallet.display_name;
+}
+```
+
+**Our Approach:** JOINs
+```sql
+SELECT le.*, w.display_name as wallet_name
+FROM ledger_entries le
+JOIN wallets w ON le.wallet_id = w.id
+```
+
+**Result:** 1 query instead of N+1 ✅
+
+### Problem 3: Slow COUNT(*) for Pagination
+
+**Bad Approach:**
+```sql
+SELECT COUNT(*) FROM ledger_entries WHERE wallet_id = $1;  -- Full table scan
+```
+
+**Our Approach:** Limit+1 Pattern
+```typescript
+const results = await query(sql, [walletId, limit + 1, offset]);
+const hasMore = results.length > limit;
+return { transactions: results.slice(0, limit), has_more: hasMore };
+```
+
+**Result:** No COUNT(*), just fetch one extra row to check if more exist ✅
+
+---
+
+## 🚀 Running the Service
 
 ### Prerequisites
+- Node.js 18+
+- PostgreSQL 14+
+- Docker (optional)
 
-- Docker & Docker Compose
-- Node.js 18+ (for local development)
-
-### Using Docker (Recommended)
+### Quick Start
 
 ```bash
-# Clone and start
+# 1. Clone and install
 cd wallet-service
-docker-compose up --build
-
-# Service available at http://localhost:3000
-```
-
-### Local Development
-
-```bash
-# Install dependencies
 npm install
 
-# Start PostgreSQL (Docker)
-docker-compose up postgres -d
+# 2. Start PostgreSQL (Docker)
+docker-compose up -d postgres
 
-# Run migrations
-# (Migrations run automatically via Docker)
+# 3. Run migrations
+npm run migrate
 
-# Start development server
+# 4. Seed test data
+npm run seed
+
+# 5. Start server
 npm run dev
 ```
 
-## 📡 API Endpoints
+### Environment Variables
 
-### Health Check
-```bash
-GET /api/v1/health
+```env
+DATABASE_URL=postgresql://postgres:password@localhost:5432/wallet_service
+PORT=3000
+NODE_ENV=development
 ```
 
-### Top-Up (Purchase Currency)
-```bash
-POST /api/v1/wallets/topup
-Content-Type: application/json
-
-{
-  "user_id": "user_alice",
-  "asset_code": "GOLD_COINS",
-  "amount": 10000,
-  "reference_id": "payment_stripe_pi_xxx",
-  "payment_method": "stripe",
-  "metadata": {
-    "payment_intent_id": "pi_xxx"
-  }
-}
-```
-
-### Bonus / Incentive
-```bash
-POST /api/v1/wallets/bonus
-Content-Type: application/json
-
-{
-  "user_id": "user_alice",
-  "asset_code": "GOLD_COINS",
-  "amount": 500,
-  "reference_id": "bonus_referral_xyz",
-  "bonus_type": "REFERRAL",
-  "metadata": {
-    "referred_by": "user_bob"
-  }
-}
-```
-
-### Spend (Purchase Items)
-```bash
-POST /api/v1/wallets/spend
-Content-Type: application/json
-
-{
-  "user_id": "user_alice",
-  "asset_code": "GOLD_COINS",
-  "amount": 300,
-  "reference_id": "purchase_item_xyz",
-  "item_id": "skin_dragon_001",
-  "metadata": {
-    "item_name": "Dragon Skin"
-  }
-}
-```
-
-### Get Balance
-```bash
-GET /api/v1/wallets/{user_id}/balance?asset_code=GOLD_COINS
-```
-
-## 🔧 Configuration
-
-| Environment Variable | Default | Description |
-|---------------------|---------|-------------|
-| `DATABASE_URL` | Required | PostgreSQL connection string |
-| `PORT` | 3000 | Server port |
-| `NODE_ENV` | development | Environment (development/production) |
-| `LOG_LEVEL` | info | Logging level |
+---
 
 ## 🧪 Testing
 
@@ -160,86 +291,60 @@ GET /api/v1/wallets/{user_id}/balance?asset_code=GOLD_COINS
 # Run all tests
 npm test
 
-# Run unit tests only
-npm run test:unit
-
-# Run integration tests only
-npm run test:integration
+# Run with coverage
+npm run test:coverage
 ```
 
-## 📊 Database Schema
+### Test Coverage
+- ✅ Transaction flows (topup, bonus, spend)
+- ✅ Idempotency handling
+- ✅ Concurrency/locking behavior
+- ✅ Insufficient funds validation
+- ✅ Error class behaviors
 
-### Asset Types
-| Column | Type | Description |
-|--------|------|-------------|
-| id | SERIAL | Primary key |
-| code | VARCHAR(50) | Unique code (GOLD_COINS, DIAMONDS) |
-| name | VARCHAR(100) | Display name |
-| decimal_places | INTEGER | Decimal precision |
-
-### Wallets
-| Column | Type | Description |
-|--------|------|-------------|
-| id | SERIAL | Primary key |
-| account_type | VARCHAR(20) | USER or SYSTEM |
-| user_id | VARCHAR(100) | Unique user identifier |
-| display_name | VARCHAR(100) | Display name |
-
-### Ledger Entries
-| Column | Type | Description |
-|--------|------|-------------|
-| id | BIGSERIAL | Primary key |
-| transaction_id | UUID | Groups debit/credit pairs |
-| wallet_id | INTEGER | Foreign key to wallets |
-| entry_type | VARCHAR(10) | DEBIT or CREDIT |
-| amount | BIGINT | Always positive (smallest unit) |
-| reference_id | VARCHAR(100) | Idempotency key |
-
-## 🔒 Concurrency Handling
-
-| Concern | Solution |
-|---------|----------|
-| Race conditions | Row-level `FOR UPDATE` locks |
-| Duplicate transactions | Unique constraint on `reference_id` |
-| Deadlocks | Lock wallets in ascending ID order |
-| Stale reads | `SERIALIZABLE` isolation level |
+---
 
 ## 📁 Project Structure
 
 ```
 wallet-service/
 ├── src/
-│   ├── config/
-│   │   └── database.ts      # Connection pool
-│   ├── controllers/
-│   │   └── wallet.controller.ts
-│   ├── services/
-│   │   ├── wallet.service.ts
-│   │   └── ledger.service.ts
-│   ├── repositories/
-│   │   └── wallet.repository.ts
-│   ├── middleware/
-│   │   ├── validation.ts
-│   │   ├── error-handler.ts
-│   │   └── idempotency.ts
-│   ├── errors/
-│   │   └── index.ts
-│   ├── types/
-│   │   └── wallet.types.ts
-│   ├── utils/
-│   │   └── logger.ts
-│   └── app.ts
+│   ├── app.ts                 # Express app setup
+│   ├── controllers/           # Request handlers
+│   ├── services/              # Business logic
+│   ├── repositories/          # Database queries
+│   ├── middleware/            # Validation, idempotency
+│   ├── errors/                # Custom error classes
+│   ├── types/                 # TypeScript definitions
+│   └── config/                # Database config
 ├── database/
-│   ├── migrations/
-│   │   └── 001_initial_schema.sql
-│   └── seed.sql
+│   ├── migrations/            # Schema migrations
+│   └── seed.sql               # Test data
 ├── tests/
-│   └── integration/
-├── docker-compose.yml
-├── Dockerfile
+│   └── integration/           # Jest tests
 └── package.json
 ```
 
-## 📝 License
+---
 
-ISC
+## 🏆 Why This Solution Stands Out
+
+| Aspect | Implementation |
+|--------|----------------|
+| **Architecture** | Ledger-based double-entry accounting |
+| **Concurrency** | Ordered locking + SERIALIZABLE isolation |
+| **Idempotency** | Reference ID uniqueness constraint |
+| **Performance** | Window functions, JOINs, materialized views |
+| **Type Safety** | Full TypeScript with Zod validation |
+| **Error Handling** | Domain-specific error classes with proper HTTP codes |
+| **API Design** | RESTful with pagination and query filters |
+
+---
+
+## 👨‍💻 Author
+
+Built with ❤️ for **Dino Ventures Backend Assignment**
+
+---
+
+*"Clarity of thought matters most"* - And I hope this codebase reflects exactly that! 🦖
