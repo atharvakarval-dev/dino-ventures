@@ -108,7 +108,6 @@ INSERT INTO ledger_entries (
         'Initial balance setup',
         '{"reason": "initial_setup", "admin": "system"}'
     )
-    )
 ON CONFLICT DO NOTHING;
 
 -- ============================================
