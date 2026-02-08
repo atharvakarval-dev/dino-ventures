@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: wallet_postgres
+    environment:
+      POSTGRES_DB: wallet_service
+      POSTGRES_USER: wallet_admin
+      POSTGRES_PASSWORD: secure_password_123
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d/migrations
+      - ./database/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U wallet_admin -d wallet_service" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - wallet_network
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: wallet_api
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://wallet_admin:secure_password_123@postgres:5432/wallet_service
+      PORT: 3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - wallet_network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  wallet_network:
+    driver: bridge
