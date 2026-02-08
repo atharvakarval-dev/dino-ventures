@@ -108,6 +108,74 @@ INSERT INTO ledger_entries (
         'Initial balance setup',
         '{"reason": "initial_setup", "admin": "system"}'
     )
+    )
+ON CONFLICT DO NOTHING;
+
+-- ============================================
+-- 5. Fund Treasury Wallets
+-- ============================================
+
+-- Treasury - Gold Coins
+INSERT INTO ledger_entries (
+    transaction_id, wallet_id, asset_type_id, entry_type, 
+    amount, transaction_type, reference_id, description, metadata
+)
+SELECT 
+    uuid_generate_v4(), 
+    w.id, 
+    a.id, 
+    'CREDIT', 
+    100000000, 
+    'INITIAL_BALANCE', 
+    'treasury_init_gold', 
+    'Treasury initial funding', 
+    '{}'::jsonb
+FROM wallets w
+JOIN asset_types a ON a.code = 'GOLD_COINS'
+WHERE w.display_name = 'Treasury - Gold Coins'
+LIMIT 1
+ON CONFLICT DO NOTHING;
+
+-- Treasury - Diamonds
+INSERT INTO ledger_entries (
+    transaction_id, wallet_id, asset_type_id, entry_type, 
+    amount, transaction_type, reference_id, description, metadata
+)
+SELECT 
+    uuid_generate_v4(), 
+    w.id, 
+    a.id, 
+    'CREDIT', 
+    100000000, 
+    'INITIAL_BALANCE', 
+    'treasury_init_diamonds', 
+    'Treasury initial funding', 
+    '{}'::jsonb
+FROM wallets w
+JOIN asset_types a ON a.code = 'DIAMONDS'
+WHERE w.display_name = 'Treasury - Diamonds'
+LIMIT 1
+ON CONFLICT DO NOTHING;
+
+-- Treasury - Loyalty Points
+INSERT INTO ledger_entries (
+    transaction_id, wallet_id, asset_type_id, entry_type, 
+    amount, transaction_type, reference_id, description, metadata
+)
+SELECT 
+    uuid_generate_v4(), 
+    w.id, 
+    a.id, 
+    'CREDIT', 
+    100000000, 
+    'INITIAL_BALANCE', 
+    'treasury_init_loyalty', 
+    'Treasury initial funding', 
+    '{}'::jsonb
+FROM wallets w
+JOIN asset_types a ON a.code = 'LOYALTY_POINTS'
+WHERE w.display_name = 'Treasury - Loyalty Points'
+LIMIT 1
 ON CONFLICT DO NOTHING;
 
 -- ============================================
